@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoapTrack — Hand Soap Business Manager</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --bg: #f0f4ff;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --radius: 12px;
+    }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ── LOADING OVERLAY ── */
+    #loadingOverlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(255,255,255,0.7); backdrop-filter: blur(2px);
+      z-index: 2000; align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    }
+    #loadingOverlay.show { display: flex; }
+    .spinner {
+      width: 38px; height: 38px;
+      border: 4px solid #dbeafe; border-top-color: var(--primary);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loadingOverlay p { font-size: 14px; color: var(--primary); font-weight: 600; }
+
+    /* ── HEADER ── */
+    header {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+      color: #fff; padding: 20px 32px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 4px 20px rgba(37,99,235,0.25);
+    }
+    header .brand { display: flex; align-items: center; gap: 12px; }
+    header .brand-icon {
+      width: 44px; height: 44px; background: rgba(255,255,255,0.2);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px;
+    }
+    header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+    header p  { font-size: 13px; opacity: 0.75; margin-top: 2px; }
+    .header-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+    .header-date  { font-size: 13px; opacity: 0.8; }
+    .sync-btn {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+      color: #fff; border-radius: 8px; padding: 5px 12px; font-size: 12px;
+      cursor: pointer; font-weight: 600; transition: background 0.2s;
+    }
+    .sync-btn:hover { background: rgba(255,255,255,0.25); }
+    .sync-dot {
+      display: inline-block; width: 7px; height: 7px;
+      border-radius: 50%; background: #4ade80; margin-right: 5px;
+    }
+
+    /* ── TABS ── */
+    .tabs {
+      background: #fff; border-bottom: 2px solid var(--border);
+      padding: 0 32px; display: flex; gap: 4px; overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 14px 20px; border: none; background: none;
+      font-size: 14px; font-weight: 500; color: var(--muted);
+      cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -2px; white-space: nowrap; transition: all 0.2s;
+    }
+    .tab-btn:hover  { color: var(--primary); }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* ── MAIN ── */
+    main { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+
+    .section-title {
+      font-size: 18px; font-weight: 700; margin-bottom: 20px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title span {
+      width: 32px; height: 32px; background: var(--primary);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 16px;
+    }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+
+    /* ── STATS ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px;
+      position: relative; overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .stat-card.blue::before   { background: var(--primary); }
+    .stat-card.green::before  { background: var(--success); }
+    .stat-card.orange::before { background: var(--warning); }
+    .stat-card.red::before    { background: var(--danger); }
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 28px; font-weight: 800; margin-top: 6px; }
+    .stat-card.blue   .stat-value { color: var(--primary); }
+    .stat-card.green  .stat-value { color: var(--success); }
+    .stat-card.orange .stat-value { color: var(--warning); }
+    .stat-card.red    .stat-value { color: var(--danger); }
+    .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ── FORMS ── */
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .form-group .hint { font-size: 11px; color: var(--muted); }
+    .form-group input, .form-group select {
+      padding: 10px 14px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 14px; color: var(--text);
+      background: #fff; transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+    }
+    .cost-breakdown {
+      background: #f8faff; border: 1px dashed #93c5fd;
+      border-radius: 10px; padding: 14px 18px; margin-top: 12px;
+    }
+    .cost-breakdown h4 { font-size: 13px; color: var(--primary); margin-bottom: 10px; font-weight: 600; }
+    .cost-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+    .cost-row.total  { border-top: 1px solid #93c5fd; margin-top: 6px; padding-top: 8px; font-weight: 700; font-size: 14px; }
+    .cost-row.profit { color: var(--success); font-weight: 700; }
+    .cost-row.loss   { color: var(--danger);  font-weight: 700; }
+
+    /* ── BUTTONS ── */
+    .btn { padding: 11px 22px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { background: #15803d; }
+    .btn-danger  { background: var(--danger); color: #fff; font-size: 12px; padding: 6px 12px; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn-row { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; align-items: center; }
+
+    /* ── TABLE ── */
+    .table-wrap { overflow-x: auto; margin-top: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: #f8faff; }
+    th { padding: 11px 14px; text-align: left; font-weight: 600; color: var(--muted); border-bottom: 2px solid var(--border); white-space: nowrap; }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8faff; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-green  { background: #dcfce7; color: var(--success); }
+    .badge-red    { background: #fee2e2; color: var(--danger); }
+    .badge-blue   { background: #dbeafe; color: var(--primary); }
+    .badge-orange { background: #fef3c7; color: var(--warning); }
+
+    /* ── EMPTY ── */
+    .empty { text-align: center; padding: 40px; color: var(--muted); }
+    .empty .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty p { font-size: 14px; }
+
+    /* ── SECTION VISIBILITY ── */
+    .tab-section { display: none; }
+    .tab-section.active { display: block; }
+
+    /* ── ALERT ── */
+    .alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: none; }
+    .alert.show { display: block; }
+    .alert-success { background: #dcfce7; color: var(--success); border: 1px solid #bbf7d0; }
+    .alert-error   { background: #fee2e2; color: var(--danger);  border: 1px solid #fecaca; }
+
+    /* ── BARS ── */
+    .profit-bar-wrap { margin-top: 20px; }
+    .bar-item { margin-bottom: 14px; }
+    .bar-label { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+    .bar-track { height: 10px; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+    .bar-fill  { height: 100%; border-radius: 99px; transition: width 0.5s; }
+    .bar-fill.green  { background: var(--success); }
+    .bar-fill.orange { background: var(--warning); }
+    .bar-fill.blue   { background: var(--primary); }
+
+    /* ── MODAL ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(15,23,42,0.45); backdrop-filter: blur(2px);
+      z-index: 1000; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 16px; padding: 28px;
+      width: 100%; max-width: 560px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      max-height: 90vh; overflow-y: auto;
+    }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-header h3 { font-size: 17px; font-weight: 700; }
+    .modal-close {
+      width: 30px; height: 30px; border-radius: 50%;
+      border: none; background: #f1f5f9; cursor: pointer;
+      font-size: 16px; display: flex; align-items: center; justify-content: center;
+    }
+    .modal-close:hover { background: #e2e8f0; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 600px) {
+      header { padding: 16px; }
+      main   { padding: 16px; }
+      .tabs  { padding: 0 16px; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <p>Syncing data…</p>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="brand">
+    <div class="brand-icon">🧴</div>
+    <div>
+      <h1>SoapTrack</h1>
+      <p>Hand Soap Business Manager</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="header-date" id="headerDate"></div>
+    <button class="sync-btn" onclick="syncData()"><span class="sync-dot"></span>Sync / Refresh</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('dashboard', this)">📊 Dashboard</button>
+  <button class="tab-btn" onclick="showTab('production', this)">🏭 Add Production Batch</button>
+  <button class="tab-btn" onclick="showTab('sales', this)">💰 Record Sale</button>
+  <button class="tab-btn" onclick="showTab('inventory', this)">📦 Inventory</button>
+  <button class="tab-btn" onclick="showTab('profit', this)">📈 Profit Analysis</button>
+  <button class="tab-btn" onclick="showTab('history', this)">📋 Full History</button>
+</div>
+
+<main>
+
+  <!-- DASHBOARD -->
+  <div id="tab-dashboard" class="tab-section active">
+    <div class="stats-grid" id="dashStats"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <div class="card">
+        <div class="section-title"><span>📦</span> Inventory Snapshot</div>
+        <div id="dashInventory"></div>
+      </div>
+      <div class="card">
+        <div class="section-title"><span>💡</span> Quick Tips</div>
+        <div id="dashTips" style="font-size:13px;line-height:1.8;color:var(--muted);"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title"><span>🕒</span> Recent Activity</div>
+      <div id="dashRecent"></div>
+    </div>
+  </div>
+
+  <!-- PRODUCTION -->
+  <div id="tab-production" class="tab-section">
+    <div class="card">
+      <div class="section-title"><span>🏭</span> Add New Production Batch</div>
+      <div class="alert alert-success" id="prodAlert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Batch Name / Reference</label>
+          <input type="text" id="prodName" placeholder="e.g. Batch #12 – Lavender" />
+        </div>
+        <div class="form-group">
+          <label>Date Produced</label>
+          <input type="date" id="prodDate" />
+        </div>
+        <div class="form-group">
+          <label>Number of Bottles Produced</label>
+          <input type="number" id="prodQty" placeholder="e.g. 100" min="1" oninput="calcBreakdown()" />
+        </div>
+        <div class="form-group">
+          <label>Soap / Liquid Cost (total batch) <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="prodSoapCost" placeholder="e.g. 45.00" step="0.01" min="0" oninput="calcBreakdown()" />
+          <span class="hint">Total cost of soap/liquid for this batch</span>
+        </div>
+        <div class="form-group">
+          <label>Bottle Cost (total batch) <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="prodBottleCost" placeholder="e.g. 30.00" step="0.01" min="0" oninput="calcBreakdown()" />
+          <span class="hint">Total cost of all bottles</span>
+        </div>
+        <div class="form-group">
+          <label>Labelling Cost (total batch) <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="prodLabelCost" placeholder="e.g. 15.00" step="0.01" min="0" oninput="calcBreakdown()" />
+          <span class="hint">Printing, stickers, design etc.</span>
+        </div>
+        <div class="form-group">
+          <label>Other / Overhead Cost (total batch) <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="prodOtherCost" placeholder="e.g. 5.00" step="0.01" min="0" oninput="calcBreakdown()" />
+          <span class="hint">Packaging, labour, electricity, etc.</span>
+        </div>
+        <div class="form-group">
+          <label>Amazon Cost (total batch) <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="prodAmazonCost" placeholder="e.g. 10.00" step="0.01" min="0" oninput="calcBreakdown()" />
+          <span class="hint">Amazon fees, shipping, FBA costs, etc.</span>
+        </div>
+        <div class="form-group">
+          <label>Planned Selling Price per Bottle <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="prodSellPrice" placeholder="e.g. 8.99" step="0.01" min="0" oninput="calcBreakdown()" />
+        </div>
+      </div>
+      <div class="cost-breakdown" id="liveBreakdown" style="display:none;">
+        <h4>📊 Live Cost Breakdown (per bottle)</h4>
+        <div class="cost-row"><span>Soap Cost</span><span id="bSoap">—</span></div>
+        <div class="cost-row"><span>Bottle Cost</span><span id="bBottle">—</span></div>
+        <div class="cost-row"><span>Label Cost</span><span id="bLabel">—</span></div>
+        <div class="cost-row"><span>Other Cost</span><span id="bOther">—</span></div>
+        <div class="cost-row"><span>Amazon Cost</span><span id="bAmazon">—</span></div>
+        <div class="cost-row total"><span>Total Cost / Bottle</span><span id="bTotal">—</span></div>
+        <div class="cost-row" id="bProfitRow"><span>Profit / Bottle</span><span id="bProfit">—</span></div>
+        <div class="cost-row" id="bMarginRow"><span>Profit Margin</span><span id="bMargin">—</span></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="addBatch()">✚ Save Production Batch</button>
+        <button class="btn" style="background:#f1f5f9;color:var(--text);" onclick="clearProdForm()">Clear</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:24px;">
+      <div class="section-title"><span>📋</span> Production Batches</div>
+      <div class="table-wrap" id="batchTable"></div>
+    </div>
+  </div>
+
+  <!-- SALES -->
+  <div id="tab-sales" class="tab-section">
+    <div class="card">
+      <div class="section-title"><span>💰</span> Record a Sale</div>
+      <div class="alert alert-success" id="saleAlert"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Select Batch to Sell From</label>
+          <select id="saleBatch" onchange="calcSaleProfit()">
+            <option value="">— Choose batch —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sale Date</label>
+          <input type="date" id="saleDate" />
+        </div>
+        <div class="form-group">
+          <label>Customer / Channel</label>
+          <input type="text" id="saleCustomer" placeholder="e.g. Farmers Market, Walk-in" />
+        </div>
+        <div class="form-group">
+          <label>Quantity Sold</label>
+          <input type="number" id="saleQty" placeholder="e.g. 10" min="1" oninput="calcSaleProfit()" />
+        </div>
+        <div class="form-group">
+          <label>Selling Price per Bottle <span style="color:var(--muted)">AED</span></label>
+          <input type="number" id="salePricePerUnit" placeholder="e.g. 8.99" step="0.01" min="0" oninput="calcSaleProfit()" />
+          <span class="hint">Enter 0 for samples / free bottles</span>
+        </div>
+      </div>
+      <div class="cost-breakdown" id="saleProfitPreview" style="display:none;">
+        <h4>💵 Sale Profit Preview</h4>
+        <div class="cost-row"><span>Revenue</span><span id="spRevenue">—</span></div>
+        <div class="cost-row"><span>Cost of Goods</span><span id="spCOGS">—</span></div>
+        <div class="cost-row total" id="spProfitRow"><span>Profit</span><span id="spProfit">—</span></div>
+        <div class="cost-row"><span>Available Stock</span><span id="spStock">—</span></div>
+        <div class="cost-row"><span>Stock After Sale</span><span id="spAfter">—</span></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-success" onclick="recordSale()">✔ Record Sale</button>
+        <button class="btn" style="background:#f1f5f9;color:var(--text);" onclick="clearSaleForm()">Clear</button>
+      </div>
+    </div>
+    <div class="card" style="margin-top:24px;">
+      <div class="section-title"><span>📋</span> Sales History</div>
+      <div class="table-wrap" id="salesTable"></div>
+    </div>
+  </div>
+
+  <!-- INVENTORY -->
+  <div id="tab-inventory" class="tab-section">
+    <div class="card">
+      <div class="section-title"><span>📦</span> Current Inventory</div>
+      <div id="inventoryContent"></div>
+    </div>
+  </div>
+
+  <!-- PROFIT -->
+  <div id="tab-profit" class="tab-section">
+    <div id="profitContent"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="tab-history" class="tab-section">
+    <div class="card">
+      <div class="section-title"><span>📋</span> Full Transaction History</div>
+      <div style="margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;">
+        <select id="historyFilter" onchange="renderHistory()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">
+          <option value="all">All Transactions</option>
+          <option value="batch">Productions Only</option>
+          <option value="sale">Sales Only</option>
+        </select>
+        <button class="btn btn-danger btn-sm" onclick="clearAllData()">🗑 Clear All Data</button>
+      </div>
+      <div class="table-wrap" id="historyTable"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- EDIT BATCH MODAL -->
+<div class="modal-overlay" id="editModal" onclick="if(event.target===this)closeEditModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✏️ Edit Production Batch</h3>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <input type="hidden" id="editBatchId" />
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Batch Name</label>
+        <input type="text" id="editName" />
+      </div>
+      <div class="form-group">
+        <label>Date Produced</label>
+        <input type="date" id="editDate" />
+      </div>
+      <div class="form-group">
+        <label>Number of Bottles</label>
+        <input type="number" id="editQty" min="1" oninput="calcEditBreakdown()" />
+      </div>
+      <div class="form-group">
+        <label>Soap / Liquid Cost (total) <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editSoapCost" step="0.01" min="0" oninput="calcEditBreakdown()" />
+      </div>
+      <div class="form-group">
+        <label>Bottle Cost (total) <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editBottleCost" step="0.01" min="0" oninput="calcEditBreakdown()" />
+      </div>
+      <div class="form-group">
+        <label>Labelling Cost (total) <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editLabelCost" step="0.01" min="0" oninput="calcEditBreakdown()" />
+      </div>
+      <div class="form-group">
+        <label>Other / Overhead Cost (total) <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editOtherCost" step="0.01" min="0" oninput="calcEditBreakdown()" />
+      </div>
+      <div class="form-group">
+        <label>Amazon Cost (total) <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editAmazonCost" step="0.01" min="0" oninput="calcEditBreakdown()" />
+      </div>
+      <div class="form-group">
+        <label>Selling Price per Bottle <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editSellPrice" step="0.01" min="0" oninput="calcEditBreakdown()" />
+      </div>
+    </div>
+    <div class="cost-breakdown" id="editBreakdown" style="display:none;margin-top:14px;">
+      <h4>📊 Updated Cost Breakdown (per bottle)</h4>
+      <div class="cost-row"><span>Soap Cost</span><span id="ebSoap">—</span></div>
+      <div class="cost-row"><span>Bottle Cost</span><span id="ebBottle">—</span></div>
+      <div class="cost-row"><span>Label Cost</span><span id="ebLabel">—</span></div>
+      <div class="cost-row"><span>Other Cost</span><span id="ebOther">—</span></div>
+      <div class="cost-row"><span>Amazon Cost</span><span id="ebAmazon">—</span></div>
+      <div class="cost-row total"><span>Total Cost / Bottle</span><span id="ebTotal">—</span></div>
+      <div class="cost-row" id="ebProfitRow"><span>Profit / Bottle</span><span id="ebProfit">—</span></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="saveEditBatch()">💾 Save Changes</button>
+      <button class="btn" style="background:#f1f5f9;color:var(--text);" onclick="closeEditModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  SUPABASE SETUP
+// ═══════════════════════════════════════════════════════════════════
+const { createClient } = supabase;
+const sb = createClient(
+  'https://dbpmiztfheibdpmgokkh.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRicG1penRmaGVpYmRwbWdva2toIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMjgyNzMsImV4cCI6MjA5MjcwNDI3M30.naXuwm9P6cOz_KjZUHI-nvquo9L8TmBn0lTaWRgBnSY'
+);
+
+// ═══════════════════════════════════════════════════════════════════
+//  IN-MEMORY CACHE
+// ═══════════════════════════════════════════════════════════════════
+let BATCHES = [];
+let SALES   = [];
+
+function mapBatch(b) {
+  return {
+    id: b.id, name: b.name, date: b.date, qty: b.qty,
+    soapCost: b.soap_cost,   bottleCost: b.bottle_cost,
+    labelCost: b.label_cost, otherCost:  b.other_cost, amazonCost: b.amazon_cost || 0,
+    totalCost: b.total_cost, costPerUnit: b.cost_per_unit,
+    sellPrice: b.sell_price
+  };
+}
+function mapSale(s) {
+  return {
+    id: s.id, batchId: s.batch_id, date: s.date,
+    customer: s.customer, qty: s.qty, pricePerUnit: s.price_per_unit
+  };
+}
+
+async function loadData() {
+  showLoading(true);
+  try {
+    const [{ data: batches, error: e1 }, { data: sales, error: e2 }] = await Promise.all([
+      sb.from('batches').select('*').order('created_at'),
+      sb.from('sales').select('*').order('created_at')
+    ]);
+    if (e1) throw e1;
+    if (e2) throw e2;
+    BATCHES = (batches || []).map(mapBatch);
+    SALES   = (sales   || []).map(mapSale);
+  } catch(e) {
+    console.error(e);
+    alert('Error loading data: ' + e.message);
+  } finally {
+    showLoading(false);
+  }
+}
+
+function getStock(batchId) {
+  const batch = BATCHES.find(b => b.id === batchId);
+  if (!batch) return 0;
+  const sold = SALES.filter(s => s.batchId === batchId).reduce((a,s) => a + Number(s.qty), 0);
+  return Math.max(0, Number(batch.qty) - sold);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+function fmt(n)     { return 'AED ' + Number(n || 0).toFixed(2); }
+function pct(n)     { return Number(n || 0).toFixed(1) + '%'; }
+function fmtDate(d) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'; }
+function uid()      { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function showLoading(on) {
+  document.getElementById('loadingOverlay').classList.toggle('show', on);
+}
+function showAlert(id, msg, type='success') {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type} show`;
+  el.textContent = msg;
+  setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+async function syncData() {
+  await loadData();
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TABS
+// ═══════════════════════════════════════════════════════════════════
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════════
+function renderAll() {
+  renderDashboard();
+  renderBatchTable();
+  renderSaleBatchSelect();
+  renderSalesTable();
+  renderInventory();
+  renderProfit();
+  renderHistory();
+}
+
+function renderDashboard() {
+  const totalProduced = BATCHES.reduce((a,b) => a + Number(b.qty), 0);
+  const totalSold     = SALES.reduce((a,s) => a + Number(s.qty), 0);
+  const totalStock    = totalProduced - totalSold;
+  const totalRevenue  = SALES.reduce((a,s) => a + Number(s.qty)*Number(s.pricePerUnit), 0);
+  const totalCOGS     = SALES.reduce((a,s) => {
+    const b = BATCHES.find(x => x.id === s.batchId);
+    return a + (b ? Number(s.qty)*b.costPerUnit : 0);
+  }, 0);
+  const totalProfit = totalRevenue - totalCOGS;
+  const margin      = totalRevenue > 0 ? (totalProfit/totalRevenue*100) : 0;
+
+  document.getElementById('dashStats').innerHTML = `
+    <div class="stat-card blue"><div class="stat-label">Bottles Produced</div><div class="stat-value">${totalProduced}</div><div class="stat-sub">${BATCHES.length} batch(es)</div></div>
+    <div class="stat-card orange"><div class="stat-label">Bottles in Stock</div><div class="stat-value">${totalStock}</div><div class="stat-sub">${totalSold} sold so far</div></div>
+    <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value">${fmt(totalRevenue)}</div><div class="stat-sub">${SALES.length} sale(s)</div></div>
+    <div class="stat-card ${totalProfit>=0?'green':'red'}"><div class="stat-label">Net Profit</div><div class="stat-value">${fmt(totalProfit)}</div><div class="stat-sub">Margin ${pct(margin)}</div></div>
+  `;
+
+  const inv = BATCHES.length ? BATCHES.map(b => {
+    const rem = getStock(b.id);
+    const w = totalProduced > 0 ? Math.round(rem/totalProduced*100) : 0;
+    return `<div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+        <span style="font-weight:600;">${b.name}</span>
+        <span style="color:var(--muted);">${rem} / ${b.qty} left</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill ${rem>Number(b.qty)*0.3?'green':'orange'}" style="width:${w}%"></div></div>
+    </div>`;
+  }).join('') : '<p style="font-size:13px;color:var(--muted);">No batches yet.</p>';
+  document.getElementById('dashInventory').innerHTML = inv;
+
+  const tips = [];
+  if (!BATCHES.length) tips.push('➕ Start by adding your first <b>Production Batch</b>.');
+  if (totalStock < 10 && BATCHES.length) tips.push('⚠️ Stock is running low — consider producing more.');
+  if (margin < 20 && SALES.length) tips.push('📉 Profit margin is under 20% — review your pricing.');
+  if (margin > 40 && SALES.length) tips.push('🎉 Great margin! You\'re above 40%.');
+  if (!tips.length) tips.push('✅ Everything looks healthy!');
+  document.getElementById('dashTips').innerHTML = tips.join('<br>');
+
+  const all = [
+    ...BATCHES.map(b => ({type:'batch', date:b.date, text:`Produced ${b.qty} bottles — <b>${b.name}</b>`, amt:fmt(b.totalCost)})),
+    ...SALES.map(s => {
+      const b = BATCHES.find(x=>x.id===s.batchId);
+      return {type:'sale', date:s.date, text:`Sold ${s.qty} bottle(s) — ${s.customer||'Customer'} (${b?b.name:'?'})`, amt:fmt(s.qty*s.pricePerUnit)};
+    })
+  ].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
+
+  document.getElementById('dashRecent').innerHTML = all.length
+    ? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Details</th><th>Amount</th></tr></thead><tbody>
+      ${all.map(a=>`<tr>
+        <td>${fmtDate(a.date)}</td>
+        <td><span class="badge ${a.type==='batch'?'badge-blue':'badge-green'}">${a.type==='batch'?'Production':'Sale'}</span></td>
+        <td>${a.text}</td><td><b>${a.amt}</b></td>
+      </tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty"><div class="empty-icon">📭</div><p>No activity yet.</p></div>';
+}
+
+function renderBatchTable() {
+  if (!BATCHES.length) {
+    document.getElementById('batchTable').innerHTML = '<div class="empty"><div class="empty-icon">🏭</div><p>No batches added yet.</p></div>';
+    return;
+  }
+  document.getElementById('batchTable').innerHTML = `<table>
+    <thead><tr>
+      <th>Batch</th><th>Date</th><th>Qty</th>
+      <th>Soap Cost</th><th>Bottle</th><th>Label</th><th>Other</th><th>Amazon</th>
+      <th>Total Cost</th><th>Cost/Bottle</th><th>Sell Price</th><th>Profit/Bottle</th><th>Margin</th><th>Stock Left</th><th></th>
+    </tr></thead>
+    <tbody>${BATCHES.map(b => {
+      const rem = getStock(b.id);
+      const prof = b.sellPrice - b.costPerUnit;
+      const mg   = b.sellPrice > 0 ? (prof/b.sellPrice*100) : 0;
+      return `<tr>
+        <td><b>${b.name}</b></td>
+        <td>${fmtDate(b.date)}</td><td>${b.qty}</td>
+        <td>${fmt(b.soapCost)}</td><td>${fmt(b.bottleCost)}</td>
+        <td>${fmt(b.labelCost)}</td><td>${fmt(b.otherCost)}</td><td>${fmt(b.amazonCost)}</td>
+        <td><b>${fmt(b.totalCost)}</b></td>
+        <td>${fmt(b.costPerUnit)}</td><td>${fmt(b.sellPrice)}</td>
+        <td><b style="color:${prof>=0?'var(--success)':'var(--danger)'}">${fmt(prof)}</b></td>
+        <td><span class="badge ${mg>=30?'badge-green':mg>=10?'badge-orange':'badge-red'}">${pct(mg)}</span></td>
+        <td><b style="color:${rem>0?'var(--success)':'var(--danger)'}">${rem}</b></td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn btn-sm" style="background:#dbeafe;color:var(--primary);font-weight:600;" onclick="openEditModal('${b.id}')">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteBatch('${b.id}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function renderSaleBatchSelect() {
+  const sel  = document.getElementById('saleBatch');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— Choose batch —</option>' +
+    BATCHES.map(b => {
+      const rem = getStock(b.id);
+      return `<option value="${b.id}" ${prev===b.id?'selected':''} ${rem===0?'disabled':''}>
+        ${b.name} — ${rem} in stock (cost ${fmt(b.costPerUnit)}/bottle)
+      </option>`;
+    }).join('');
+}
+
+function renderSalesTable() {
+  if (!SALES.length) {
+    document.getElementById('salesTable').innerHTML = '<div class="empty"><div class="empty-icon">💰</div><p>No sales recorded yet.</p></div>';
+    return;
+  }
+  document.getElementById('salesTable').innerHTML = `<table>
+    <thead><tr>
+      <th>Date</th><th>Batch</th><th>Customer</th><th>Qty</th>
+      <th>Price/Bottle</th><th>Revenue</th><th>COGS</th><th>Profit</th><th>Margin</th><th></th>
+    </tr></thead>
+    <tbody>${SALES.slice().reverse().map(s => {
+      const b    = BATCHES.find(x=>x.id===s.batchId);
+      const cogs = b ? Number(s.qty)*b.costPerUnit : 0;
+      const rev  = Number(s.qty)*Number(s.pricePerUnit);
+      const prof = rev - cogs;
+      const mg   = rev > 0 ? (prof/rev*100) : 0;
+      return `<tr>
+        <td>${fmtDate(s.date)}</td>
+        <td>${b?b.name:'Unknown'}</td>
+        <td>${s.customer||'—'}</td><td>${s.qty}</td>
+        <td>${fmt(s.pricePerUnit)}</td>
+        <td><b>${fmt(rev)}</b></td><td>${fmt(cogs)}</td>
+        <td><b style="color:${prof>=0?'var(--success)':'var(--danger)'}">${fmt(prof)}</b></td>
+        <td><span class="badge ${mg>=30?'badge-green':mg>=10?'badge-orange':'badge-red'}">${pct(mg)}</span></td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteSale('${s.id}')">Delete</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function renderInventory() {
+  if (!BATCHES.length) {
+    document.getElementById('inventoryContent').innerHTML = '<div class="empty"><div class="empty-icon">📦</div><p>No batches yet.</p></div>';
+    return;
+  }
+  const totalStock   = BATCHES.reduce((a,b)=>a+getStock(b.id),0);
+  const totalInvVal  = BATCHES.reduce((a,b)=>a+getStock(b.id)*b.costPerUnit,0);
+  document.getElementById('inventoryContent').innerHTML = `
+    <div class="stats-grid" style="margin-bottom:20px;">
+      <div class="stat-card blue"><div class="stat-label">Total in Stock</div><div class="stat-value">${totalStock}</div><div class="stat-sub">Bottles available</div></div>
+      <div class="stat-card orange"><div class="stat-label">Inventory Value</div><div class="stat-value">${fmt(totalInvVal)}</div><div class="stat-sub">At cost price</div></div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Batch</th><th>Produced</th><th>Total Made</th><th>Sold</th><th>Remaining</th><th>Cost/Bottle</th><th>Sell Price</th><th>Inv Value</th><th>Status</th></tr></thead>
+      <tbody>${BATCHES.map(b => {
+        const sold = SALES.filter(s=>s.batchId===b.id).reduce((a,s)=>a+Number(s.qty),0);
+        const rem  = getStock(b.id);
+        const st   = rem===0?'badge-red':rem<Number(b.qty)*0.2?'badge-orange':'badge-green';
+        const stT  = rem===0?'Out of Stock':rem<Number(b.qty)*0.2?'Low Stock':'In Stock';
+        return `<tr>
+          <td><b>${b.name}</b></td><td>${fmtDate(b.date)}</td><td>${b.qty}</td>
+          <td>${sold}</td>
+          <td><b style="font-size:16px;color:${rem>0?'var(--success)':'var(--danger)'}">${rem}</b></td>
+          <td>${fmt(b.costPerUnit)}</td><td>${fmt(b.sellPrice)}</td>
+          <td>${fmt(rem*b.costPerUnit)}</td>
+          <td><span class="badge ${st}">${stT}</span></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+}
+
+function renderProfit() {
+  const totalRevenue = SALES.reduce((a,s)=>a+Number(s.qty)*Number(s.pricePerUnit),0);
+  const totalCOGS    = SALES.reduce((a,s)=>{const b=BATCHES.find(x=>x.id===s.batchId);return a+(b?Number(s.qty)*b.costPerUnit:0);},0);
+  const totalProfit  = totalRevenue - totalCOGS;
+  const totalMargin  = totalRevenue > 0 ? (totalProfit/totalRevenue*100) : 0;
+  const totalSold    = SALES.reduce((a,s)=>a+Number(s.qty),0);
+  const totalProd    = BATCHES.reduce((a,b)=>a+Number(b.qty),0);
+
+  const batchRows = BATCHES.map(b => {
+    const bSales  = SALES.filter(s=>s.batchId===b.id);
+    const soldQty = bSales.reduce((a,s)=>a+Number(s.qty),0);
+    const revenue = bSales.reduce((a,s)=>a+Number(s.qty)*Number(s.pricePerUnit),0);
+    const cogs    = soldQty * b.costPerUnit;
+    const profit  = revenue - cogs;
+    const margin  = revenue > 0 ? (profit/revenue*100) : 0;
+    return {b, soldQty, revenue, cogs, profit, margin};
+  });
+
+  const totSoap   = BATCHES.reduce((a,b)=>a+Number(b.soapCost),0);
+  const totBottle = BATCHES.reduce((a,b)=>a+Number(b.bottleCost),0);
+  const totLabel  = BATCHES.reduce((a,b)=>a+Number(b.labelCost),0);
+  const totOther  = BATCHES.reduce((a,b)=>a+Number(b.otherCost),0);
+  const totAmazon = BATCHES.reduce((a,b)=>a+Number(b.amazonCost),0);
+  const grandCost = totSoap+totBottle+totLabel+totOther+totAmazon;
+
+  document.getElementById('profitContent').innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card green"><div class="stat-label">Total Revenue</div><div class="stat-value">${fmt(totalRevenue)}</div><div class="stat-sub">${totalSold} bottles sold</div></div>
+      <div class="stat-card red"><div class="stat-label">Total COGS</div><div class="stat-value">${fmt(totalCOGS)}</div><div class="stat-sub">Cost of goods sold</div></div>
+      <div class="stat-card ${totalProfit>=0?'green':'red'}"><div class="stat-label">Net Profit</div><div class="stat-value">${fmt(totalProfit)}</div><div class="stat-sub">${pct(totalMargin)} margin</div></div>
+      <div class="stat-card blue"><div class="stat-label">Sell-Through Rate</div><div class="stat-value">${totalProd>0?pct(totalSold/totalProd*100):'0%'}</div><div class="stat-sub">${totalSold}/${totalProd} bottles</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <div class="card">
+        <div class="section-title"><span>📊</span> Revenue vs Cost</div>
+        <div class="profit-bar-wrap">
+          ${totalRevenue>0?`
+          <div class="bar-item"><div class="bar-label"><span>Revenue</span><span>${fmt(totalRevenue)}</span></div><div class="bar-track"><div class="bar-fill green" style="width:100%"></div></div></div>
+          <div class="bar-item"><div class="bar-label"><span>Cost of Goods Sold</span><span>${fmt(totalCOGS)}</span></div><div class="bar-track"><div class="bar-fill orange" style="width:${totalRevenue>0?totalCOGS/totalRevenue*100:0}%"></div></div></div>
+          <div class="bar-item"><div class="bar-label"><span>Gross Profit</span><span>${fmt(totalProfit)}</span></div><div class="bar-track"><div class="bar-fill blue" style="width:${totalRevenue>0?Math.max(0,totalProfit/totalRevenue*100):0}%"></div></div></div>
+          `:'<p style="color:var(--muted);font-size:13px;">Record some sales to see charts.</p>'}
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title"><span>🧴</span> Cost Structure</div>
+        ${BATCHES.length?`<div class="profit-bar-wrap">
+          ${[['Soap / Liquid','green',totSoap],['Bottles','blue',totBottle],['Labelling','orange',totLabel],['Other','',totOther],['Amazon','',totAmazon]].map(([lbl,cls,val])=>`
+          <div class="bar-item">
+            <div class="bar-label"><span>${lbl}</span><span>${fmt(val)} (${grandCost>0?pct(val/grandCost*100):'0%'})</span></div>
+            <div class="bar-track"><div class="bar-fill ${cls}" style="width:${grandCost>0?val/grandCost*100:0}%;${!cls?'background:#94a3b8':''}""></div></div>
+          </div>`).join('')}
+        </div>`:'<p style="color:var(--muted);font-size:13px;">No production data yet.</p>'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title"><span>📦</span> Profit by Batch</div>
+      ${batchRows.length?`<div class="table-wrap"><table>
+        <thead><tr><th>Batch</th><th>Produced</th><th>Sold</th><th>Revenue</th><th>COGS</th><th>Profit</th><th>Margin</th><th>Profit/Bottle</th></tr></thead>
+        <tbody>${batchRows.map(r=>`<tr>
+          <td><b>${r.b.name}</b></td><td>${r.b.qty}</td><td>${r.soldQty}</td>
+          <td>${fmt(r.revenue)}</td><td>${fmt(r.cogs)}</td>
+          <td><b style="color:${r.profit>=0?'var(--success)':'var(--danger)'}">${fmt(r.profit)}</b></td>
+          <td><span class="badge ${r.margin>=30?'badge-green':r.margin>=10?'badge-orange':'badge-red'}">${pct(r.margin)}</span></td>
+          <td>${fmt(r.soldQty>0?r.profit/r.soldQty:0)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`:'<div class="empty"><div class="empty-icon">📈</div><p>Add batches and record sales to see profit analysis.</p></div>'}
+    </div>`;
+}
+
+function renderHistory() {
+  const filter = document.getElementById('historyFilter').value;
+  const all = [];
+  if (filter !== 'sale') BATCHES.forEach(b=>all.push({type:'batch',date:b.date,
+    desc:`Produced <b>${b.qty}</b> bottles — ${b.name}`,
+    detail:`Soap ${fmt(b.soapCost)} | Bottle ${fmt(b.bottleCost)} | Label ${fmt(b.labelCost)} | Other ${fmt(b.otherCost)} | Amazon ${fmt(b.amazonCost)}`,
+    amt:fmt(b.totalCost), amtColor:'var(--danger)'}));
+  if (filter !== 'batch') SALES.forEach(s=>{
+    const b   = BATCHES.find(x=>x.id===s.batchId);
+    const rev = Number(s.qty)*Number(s.pricePerUnit);
+    const cogs= b?Number(s.qty)*b.costPerUnit:0;
+    all.push({type:'sale',date:s.date,
+      desc:`Sold <b>${s.qty}</b> bottle(s) — ${s.customer||'Customer'} (${b?b.name:'?'})`,
+      detail:`${fmt(s.pricePerUnit)}/bottle | Revenue ${fmt(rev)} | COGS ${fmt(cogs)} | Profit ${fmt(rev-cogs)}`,
+      amt:fmt(rev), amtColor:'var(--success)'});
+  });
+  all.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  document.getElementById('historyTable').innerHTML = all.length
+    ? `<table><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Details</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>${all.map(a=>`<tr>
+        <td style="white-space:nowrap">${fmtDate(a.date)}</td>
+        <td><span class="badge ${a.type==='batch'?'badge-blue':'badge-green'}">${a.type==='batch'?'Production':'Sale'}</span></td>
+        <td>${a.desc}</td>
+        <td style="color:var(--muted);font-size:12px;">${a.detail}</td>
+        <td style="text-align:right"><b style="color:${a.amtColor}">${a.amt}</b></td>
+      </tr>`).join('')}</tbody></table>`
+    : '<div class="empty"><div class="empty-icon">📭</div><p>No records yet.</p></div>';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PRODUCTION ACTIONS
+// ═══════════════════════════════════════════════════════════════════
+function calcBreakdown() {
+  const qty  = parseFloat(document.getElementById('prodQty').value) || 0;
+  const soap = parseFloat(document.getElementById('prodSoapCost').value) || 0;
+  const bot  = parseFloat(document.getElementById('prodBottleCost').value) || 0;
+  const lbl  = parseFloat(document.getElementById('prodLabelCost').value) || 0;
+  const oth  = parseFloat(document.getElementById('prodOtherCost').value) || 0;
+  const amz  = parseFloat(document.getElementById('prodAmazonCost').value) || 0;
+  const sell = parseFloat(document.getElementById('prodSellPrice').value) || 0;
+  if (qty <= 0) { document.getElementById('liveBreakdown').style.display='none'; return; }
+  document.getElementById('liveBreakdown').style.display='block';
+  const cpu  = (soap+bot+lbl+oth+amz)/qty;
+  const prof = sell - cpu;
+  const marg = sell > 0 ? (prof/sell*100) : 0;
+  document.getElementById('bSoap').textContent   = fmt(soap/qty);
+  document.getElementById('bBottle').textContent = fmt(bot/qty);
+  document.getElementById('bLabel').textContent  = fmt(lbl/qty);
+  document.getElementById('bOther').textContent  = fmt(oth/qty);
+  document.getElementById('bAmazon').textContent = fmt(amz/qty);
+  document.getElementById('bTotal').textContent  = fmt(cpu);
+  const pr = document.getElementById('bProfit');
+  const mg = document.getElementById('bMargin');
+  const pr_row = document.getElementById('bProfitRow');
+  const mg_row = document.getElementById('bMarginRow');
+  if (sell > 0) {
+    pr.textContent = fmt(prof); mg.textContent = pct(marg);
+    pr_row.className = 'cost-row ' + (prof>=0?'profit':'loss');
+    mg_row.className = 'cost-row ' + (prof>=0?'profit':'loss');
+    pr_row.style.display=''; mg_row.style.display='';
+  } else { pr_row.style.display='none'; mg_row.style.display='none'; }
+}
+
+async function addBatch() {
+  const name = document.getElementById('prodName').value.trim();
+  const date = document.getElementById('prodDate').value;
+  const qty  = parseInt(document.getElementById('prodQty').value);
+  const soap = parseFloat(document.getElementById('prodSoapCost').value) || 0;
+  const bot  = parseFloat(document.getElementById('prodBottleCost').value) || 0;
+  const lbl  = parseFloat(document.getElementById('prodLabelCost').value) || 0;
+  const oth  = parseFloat(document.getElementById('prodOtherCost').value) || 0;
+  const amz  = parseFloat(document.getElementById('prodAmazonCost').value) || 0;
+  const sell = parseFloat(document.getElementById('prodSellPrice').value) || 0;
+  if (!name)        { alert('Please enter a batch name.'); return; }
+  if (!date)        { alert('Please select a production date.'); return; }
+  if (!qty||qty<1)  { alert('Please enter a valid quantity.'); return; }
+  const total = soap+bot+lbl+oth+amz;
+  const cpu   = total/qty;
+  showLoading(true);
+  const { error } = await sb.from('batches').insert([{
+    id: uid(), name, date, qty,
+    soap_cost: soap, bottle_cost: bot, label_cost: lbl, other_cost: oth, amazon_cost: amz,
+    total_cost: total, cost_per_unit: cpu, sell_price: sell
+  }]);
+  if (error) { showLoading(false); alert('Error saving batch: ' + error.message); return; }
+  await loadData();
+  renderAll();
+  showAlert('prodAlert', `✅ Batch "${name}" (${qty} bottles) added!`);
+  clearProdForm();
+}
+
+async function deleteBatch(id) {
+  if (!confirm('Delete this batch? Associated sales will also be removed.')) return;
+  showLoading(true);
+  await sb.from('batches').delete().eq('id', id);
+  await loadData();
+  renderAll();
+}
+
+function clearProdForm() {
+  ['prodName','prodQty','prodSoapCost','prodBottleCost','prodLabelCost','prodOtherCost','prodAmazonCost','prodSellPrice']
+    .forEach(x => document.getElementById(x).value = '');
+  document.getElementById('liveBreakdown').style.display='none';
+}
+
+// ── EDIT MODAL ──
+function openEditModal(id) {
+  const b = BATCHES.find(x=>x.id===id);
+  if (!b) return;
+  document.getElementById('editBatchId').value    = id;
+  document.getElementById('editName').value        = b.name;
+  document.getElementById('editDate').value        = b.date;
+  document.getElementById('editQty').value         = b.qty;
+  document.getElementById('editSoapCost').value    = b.soapCost;
+  document.getElementById('editBottleCost').value  = b.bottleCost;
+  document.getElementById('editLabelCost').value   = b.labelCost;
+  document.getElementById('editOtherCost').value   = b.otherCost;
+  document.getElementById('editAmazonCost').value  = b.amazonCost;
+  document.getElementById('editSellPrice').value   = b.sellPrice;
+  document.getElementById('editModal').classList.add('open');
+  calcEditBreakdown();
+}
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('open');
+}
+function calcEditBreakdown() {
+  const qty  = parseFloat(document.getElementById('editQty').value) || 0;
+  const soap = parseFloat(document.getElementById('editSoapCost').value) || 0;
+  const bot  = parseFloat(document.getElementById('editBottleCost').value) || 0;
+  const lbl  = parseFloat(document.getElementById('editLabelCost').value) || 0;
+  const oth  = parseFloat(document.getElementById('editOtherCost').value) || 0;
+  const amz  = parseFloat(document.getElementById('editAmazonCost').value) || 0;
+  const sell = parseFloat(document.getElementById('editSellPrice').value) || 0;
+  if (qty<=0) { document.getElementById('editBreakdown').style.display='none'; return; }
+  const cpu = (soap+bot+lbl+oth+amz)/qty;
+  const prof= sell - cpu;
+  document.getElementById('editBreakdown').style.display='block';
+  document.getElementById('ebSoap').textContent   = fmt(soap/qty);
+  document.getElementById('ebBottle').textContent = fmt(bot/qty);
+  document.getElementById('ebLabel').textContent  = fmt(lbl/qty);
+  document.getElementById('ebOther').textContent  = fmt(oth/qty);
+  document.getElementById('ebAmazon').textContent = fmt(amz/qty);
+  document.getElementById('ebTotal').textContent  = fmt(cpu);
+  const row = document.getElementById('ebProfitRow');
+  if (sell > 0) {
+    document.getElementById('ebProfit').textContent = fmt(prof);
+    row.className = 'cost-row '+(prof>=0?'profit':'loss');
+    row.style.display='';
+  } else { row.style.display='none'; }
+}
+async function saveEditBatch() {
+  const id   = document.getElementById('editBatchId').value;
+  const name = document.getElementById('editName').value.trim();
+  const date = document.getElementById('editDate').value;
+  const qty  = parseInt(document.getElementById('editQty').value);
+  const soap = parseFloat(document.getElementById('editSoapCost').value) || 0;
+  const bot  = parseFloat(document.getElementById('editBottleCost').value) || 0;
+  const lbl  = parseFloat(document.getElementById('editLabelCost').value) || 0;
+  const oth  = parseFloat(document.getElementById('editOtherCost').value) || 0;
+  const amz  = parseFloat(document.getElementById('editAmazonCost').value) || 0;
+  const sell = parseFloat(document.getElementById('editSellPrice').value) || 0;
+  if (!name)       { alert('Please enter a batch name.'); return; }
+  if (!date)       { alert('Please select a date.'); return; }
+  if (!qty||qty<1) { alert('Please enter a valid quantity.'); return; }
+  const total = soap+bot+lbl+oth+amz;
+  const cpu   = total/qty;
+  showLoading(true);
+  const { error } = await sb.from('batches').update({
+    name, date, qty,
+    soap_cost: soap, bottle_cost: bot, label_cost: lbl, other_cost: oth, amazon_cost: amz,
+    total_cost: total, cost_per_unit: cpu, sell_price: sell
+  }).eq('id', id);
+  if (error) { showLoading(false); alert('Error updating batch: ' + error.message); return; }
+  await loadData();
+  closeEditModal();
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  SALES ACTIONS
+// ═══════════════════════════════════════════════════════════════════
+function calcSaleProfit() {
+  const batchId = document.getElementById('saleBatch').value;
+  const qty     = parseInt(document.getElementById('saleQty').value) || 0;
+  const price   = parseFloat(document.getElementById('salePricePerUnit').value) || 0;
+  const preview = document.getElementById('saleProfitPreview');
+  if (!batchId||qty<=0) { preview.style.display='none'; return; }
+  const b = BATCHES.find(x=>x.id===batchId);
+  if (!b) { preview.style.display='none'; return; }
+  const stock = getStock(batchId);
+  const rev   = qty*price;
+  const cogs  = qty*b.costPerUnit;
+  const prof  = rev-cogs;
+  preview.style.display='block';
+  document.getElementById('spRevenue').textContent = fmt(rev);
+  document.getElementById('spCOGS').textContent    = fmt(cogs);
+  document.getElementById('spProfit').textContent  = fmt(prof);
+  document.getElementById('spStock').textContent   = stock+' bottles';
+  document.getElementById('spAfter').textContent   = Math.max(0,stock-qty)+' bottles';
+  document.getElementById('spProfitRow').className = 'cost-row total '+(prof>=0?'profit':'loss');
+}
+
+async function recordSale() {
+  const batchId  = document.getElementById('saleBatch').value;
+  const date     = document.getElementById('saleDate').value;
+  const customer = document.getElementById('saleCustomer').value.trim();
+  const qty      = parseInt(document.getElementById('saleQty').value);
+  const priceRaw = document.getElementById('salePricePerUnit').value;
+  const price    = priceRaw==='' ? NaN : parseFloat(priceRaw);
+  if (!batchId)           { alert('Please select a batch.'); return; }
+  if (!date)              { alert('Please enter a sale date.'); return; }
+  if (!qty||qty<1)        { alert('Please enter a valid quantity.'); return; }
+  if (isNaN(price)||price<0) { alert('Please enter a selling price (0 is allowed for samples).'); return; }
+  const stock = getStock(batchId);
+  if (qty>stock)          { alert(`Only ${stock} bottles available in this batch!`); return; }
+  showLoading(true);
+  const { error } = await sb.from('sales').insert([{
+    id: uid(), batch_id: batchId, date, customer, qty, price_per_unit: price
+  }]);
+  if (error) { showLoading(false); alert('Error recording sale: ' + error.message); return; }
+  await loadData();
+  const remaining = getStock(batchId);
+  const batch = BATCHES.find(b=>b.id===batchId);
+  renderAll();
+  showAlert('saleAlert', `✅ Sale recorded! ${qty} bottle(s) sold. ${remaining} remaining in "${batch?.name}".`);
+  clearSaleForm();
+}
+
+async function deleteSale(id) {
+  if (!confirm('Delete this sale record?')) return;
+  showLoading(true);
+  await sb.from('sales').delete().eq('id', id);
+  await loadData();
+  renderAll();
+}
+
+function clearSaleForm() {
+  ['saleDate','saleCustomer','saleQty','salePricePerUnit'].forEach(x=>document.getElementById(x).value='');
+  document.getElementById('saleProfitPreview').style.display='none';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CLEAR ALL
+// ═══════════════════════════════════════════════════════════════════
+async function clearAllData() {
+  if (!confirm('⚠️ This will permanently delete ALL batches and sales. Are you sure?')) return;
+  if (!confirm('Last chance — really delete everything?')) return;
+  showLoading(true);
+  await sb.from('sales').delete().neq('id','__none__');
+  await sb.from('batches').delete().neq('id','__none__');
+  await loadData();
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  document.getElementById('headerDate').textContent =
+    new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('prodDate').value = today;
+  document.getElementById('saleDate').value = today;
+  await loadData();
+  renderAll();
+});
+</script>
+</body>
+</html>
