@@ -430,6 +430,52 @@
 
 </main>
 
+<!-- EDIT SALE MODAL -->
+<div class="modal-overlay" id="editSaleModal" onclick="if(event.target===this)closeEditSaleModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>✏️ Edit Sale</h3>
+      <button class="modal-close" onclick="closeEditSaleModal()">✕</button>
+    </div>
+    <input type="hidden" id="editSaleId" />
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Batch</label>
+        <select id="editSaleBatch" onchange="calcEditSaleProfit()">
+          <option value="">— Choose batch —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Sale Date</label>
+        <input type="date" id="editSaleDate" />
+      </div>
+      <div class="form-group">
+        <label>Customer / Channel</label>
+        <input type="text" id="editSaleCustomer" placeholder="e.g. Farmers Market" />
+      </div>
+      <div class="form-group">
+        <label>Quantity Sold</label>
+        <input type="number" id="editSaleQty" min="1" oninput="calcEditSaleProfit()" />
+      </div>
+      <div class="form-group">
+        <label>Selling Price per Bottle <span style="color:var(--muted)">AED</span></label>
+        <input type="number" id="editSalePricePerUnit" step="0.01" min="0" oninput="calcEditSaleProfit()" />
+        <span class="hint">Enter 0 for samples / free bottles</span>
+      </div>
+    </div>
+    <div class="cost-breakdown" id="editSalePreview" style="display:none;margin-top:14px;">
+      <h4>💵 Updated Sale Preview</h4>
+      <div class="cost-row"><span>Revenue</span><span id="espRevenue">—</span></div>
+      <div class="cost-row"><span>Cost of Goods</span><span id="espCOGS">—</span></div>
+      <div class="cost-row total" id="espProfitRow"><span>Profit</span><span id="espProfit">—</span></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="saveEditSale()">💾 Save Changes</button>
+      <button class="btn" style="background:#f1f5f9;color:var(--text);" onclick="closeEditSaleModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT BATCH MODAL -->
 <div class="modal-overlay" id="editModal" onclick="if(event.target===this)closeEditModal()">
   <div class="modal">
@@ -725,7 +771,10 @@ function renderSalesTable() {
         <td><b>${fmt(rev)}</b></td><td>${fmt(cogs)}</td>
         <td><b style="color:${prof>=0?'var(--success)':'var(--danger)'}">${fmt(prof)}</b></td>
         <td><span class="badge ${mg>=30?'badge-green':mg>=10?'badge-orange':'badge-red'}">${pct(mg)}</span></td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteSale('${s.id}')">Delete</button></td>
+        <td style="display:flex;gap:6px;">
+          <button class="btn btn-sm" style="background:#dbeafe;color:var(--primary);font-weight:600;" onclick="openEditSaleModal('${s.id}')">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteSale('${s.id}')">Delete</button>
+        </td>
       </tr>`;
     }).join('')}</tbody></table>`;
 }
@@ -1063,6 +1112,68 @@ async function deleteSale(id) {
   showLoading(true);
   await sb.from('sales').delete().eq('id', id);
   await loadData();
+  renderAll();
+}
+
+function openEditSaleModal(id) {
+  const s = SALES.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('editSaleId').value = id;
+  document.getElementById('editSaleDate').value = s.date;
+  document.getElementById('editSaleCustomer').value = s.customer || '';
+  document.getElementById('editSaleQty').value = s.qty;
+  document.getElementById('editSalePricePerUnit').value = s.pricePerUnit;
+  const sel = document.getElementById('editSaleBatch');
+  sel.innerHTML = '<option value="">— Choose batch —</option>' +
+    BATCHES.map(b => `<option value="${b.id}" ${b.id === s.batchId ? 'selected' : ''}>${b.name}</option>`).join('');
+  document.getElementById('editSaleModal').classList.add('open');
+  calcEditSaleProfit();
+}
+
+function closeEditSaleModal() {
+  document.getElementById('editSaleModal').classList.remove('open');
+  document.getElementById('editSalePreview').style.display = 'none';
+}
+
+function calcEditSaleProfit() {
+  const batchId = document.getElementById('editSaleBatch').value;
+  const qty     = parseInt(document.getElementById('editSaleQty').value) || 0;
+  const price   = parseFloat(document.getElementById('editSalePricePerUnit').value) || 0;
+  const preview = document.getElementById('editSalePreview');
+  if (!batchId || qty <= 0) { preview.style.display = 'none'; return; }
+  const b = BATCHES.find(x => x.id === batchId);
+  if (!b) { preview.style.display = 'none'; return; }
+  const rev  = qty * price;
+  const cogs = qty * b.costPerUnit;
+  const prof = rev - cogs;
+  preview.style.display = 'block';
+  document.getElementById('espRevenue').textContent = fmt(rev);
+  document.getElementById('espCOGS').textContent    = fmt(cogs);
+  document.getElementById('espProfit').textContent  = fmt(prof);
+  document.getElementById('espProfitRow').className = 'cost-row total ' + (prof >= 0 ? 'profit' : 'loss');
+}
+
+async function saveEditSale() {
+  const id       = document.getElementById('editSaleId').value;
+  const batchId  = document.getElementById('editSaleBatch').value;
+  const date     = document.getElementById('editSaleDate').value;
+  const customer = document.getElementById('editSaleCustomer').value.trim();
+  const qty      = parseInt(document.getElementById('editSaleQty').value);
+  const priceRaw = document.getElementById('editSalePricePerUnit').value;
+  const price    = priceRaw === '' ? NaN : parseFloat(priceRaw);
+  if (!batchId)              { alert('Please select a batch.'); return; }
+  if (!date)                 { alert('Please enter a sale date.'); return; }
+  if (!qty || qty < 1)       { alert('Please enter a valid quantity.'); return; }
+  if (isNaN(price) || price < 0) { alert('Please enter a selling price (0 allowed for samples).'); return; }
+  const stock = getStock(batchId) + (SALES.find(s => s.id === id)?.batchId === batchId ? SALES.find(s => s.id === id).qty : 0);
+  if (qty > stock) { alert(`Only ${stock} bottles available in this batch!`); return; }
+  showLoading(true);
+  const { error } = await sb.from('sales').update({
+    batch_id: batchId, date, customer, qty, price_per_unit: price
+  }).eq('id', id);
+  if (error) { showLoading(false); alert('Error updating sale: ' + error.message); return; }
+  await loadData();
+  closeEditSaleModal();
   renderAll();
 }
 
